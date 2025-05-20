@@ -1,14 +1,18 @@
+
 import { logTitle } from "./utils";
 import VectorStore from "./VectorStore";
 import 'dotenv/config';
+import { InferenceClient } from "@huggingface/inference";
 
 export default class EmbeddingRetriever {
     private embeddingModel: string;
     private vectorStore: VectorStore;
+    private hfClient: InferenceClient;
 
     constructor(embeddingModel: string) {
         this.embeddingModel = embeddingModel;
         this.vectorStore = new VectorStore();
+        this.hfClient = new InferenceClient(process.env.HUGGINGFACE_API_KEY!);
     }
 
     async embedDocument(document: string) {
@@ -25,21 +29,15 @@ export default class EmbeddingRetriever {
     }
 
     private async embed(document: string): Promise<number[]> {
-        const response = await fetch(`${process.env.EMBEDDING_BASE_URL}/embeddings`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.EMBEDDING_KEY}`,
-            },
-            body: JSON.stringify({
-                model: this.embeddingModel,
-                input: document,
-                encoding_format: 'float',
-            }),
+        // Use the InferenceClient to get the embedding for a single document
+        const output = await this.hfClient.featureExtraction({
+            model: this.embeddingModel,
+            inputs: document,
+            provider: "hf-inference",
         });
-        const data = await response.json();
-        console.log(data.data[0].embedding);
-        return data.data[0].embedding;
+        // output is an array of numbers (embedding)
+        console.log(output);
+        return output as number[];
     }
 
     async retrieve(query: string, topK: number = 3): Promise<string[]> {

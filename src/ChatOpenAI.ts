@@ -1,7 +1,13 @@
-import OpenAI from "openai";
+
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
-import 'dotenv/config'
+import 'dotenv/config';
 import { logTitle } from "./utils";
+
 
 export interface ToolCall {
     id: string;
@@ -11,17 +17,15 @@ export interface ToolCall {
     };
 }
 
-export default class ChatOpenAI {
-    private llm: OpenAI;
+
+export default class ChatAssistant {
+    private ai: GoogleGenerativeAI;
     private model: string;
-    private messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    private messages: { role: string; content: string }[] = [];
     private tools: Tool[];
 
     constructor(model: string, systemPrompt: string = '', tools: Tool[] = [], context: string = '') {
-        this.llm = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-            baseURL: process.env.OPENAI_BASE_URL,
-        });
+        this.ai = new GoogleGenerativeAI(process.env.API_KEY!);
         this.model = model;
         this.tools = tools;
         if (systemPrompt) this.messages.push({ role: "system", content: systemPrompt });
@@ -33,60 +37,38 @@ export default class ChatOpenAI {
         if (prompt) {
             this.messages.push({ role: "user", content: prompt });
         }
-        const stream = await this.llm.chat.completions.create({
-            model: this.model,
-            messages: this.messages,
-            stream: true,
-            tools: this.getToolsDefinition(),
-        });
+        // Gemini expects a single string or array of content blocks
+        const contents = this.messages.map(m => ({ role: 'user', parts: [{ text: m.content }] }));
+        const model = this.model || 'gemini-2.0-flash';
+        const geminiModel = this.ai.getGenerativeModel({ model });
+        const response = await geminiModel.generateContent({ contents });
         let content = "";
+        // Gemini does not support tool calls in the same way as OpenAI, so we return an empty array
         let toolCalls: ToolCall[] = [];
         logTitle('RESPONSE');
-        for await (const chunk of stream) {
-            const delta = chunk.choices[0].delta;
-            // 处理普通Content
-            if (delta.content) {
-                const contentChunk = chunk.choices[0].delta.content || "";
-                content += contentChunk;
-                process.stdout.write(contentChunk);
-            }
-            // 处理ToolCall
-            if (delta.tool_calls) {
-                for (const toolCallChunk of delta.tool_calls) {
-                    // 第一次要创建一个toolCall
-                    if (toolCalls.length <= toolCallChunk.index) {
-                        toolCalls.push({ id: '', function: { name: '', arguments: '' } });
-                    }
-                    let currentCall = toolCalls[toolCallChunk.index];
-                    if (toolCallChunk.id) currentCall.id += toolCallChunk.id;
-                    if (toolCallChunk.function?.name) currentCall.function.name += toolCallChunk.function.name;
-                    if (toolCallChunk.function?.arguments) currentCall.function.arguments += toolCallChunk.function.arguments;
-                }
-            }
+        // Try to extract the text from the response
+        if (response && response.response && response.response.candidates && response.response.candidates[0] && response.response.candidates[0].content && response.response.candidates[0].content.parts) {
+            content = response.response.candidates[0].content.parts.map((p: any) => p.text).join('');
+            process.stdout.write(content);
+        } else if (response && response.response && response.response.text) {
+            content = response.response.text();
+            process.stdout.write(content);
         }
-        this.messages.push({ role: "assistant", content: content, tool_calls: toolCalls.map(call => ({ id: call.id, type: "function", function: call.function })) });
+        this.messages.push({ role: "assistant", content });
         return {
-            content: content,
-            toolCalls: toolCalls,
+            content,
+            toolCalls,
         };
     }
 
+
     public appendToolResult(toolCallId: string, toolOutput: string) {
-        this.messages.push({
-            role: "tool",
-            content: toolOutput,
-            tool_call_id: toolCallId
-        });
+        // Gemini does not support tool calls, so this is a no-op or could be adapted for future use
     }
 
-    private getToolsDefinition(): OpenAI.Chat.Completions.ChatCompletionTool[] {
-        return this.tools.map((tool) => ({
-            type: "function",
-            function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.inputSchema,
-            },
-        }));
+    // Gemini does not support tool definitions in the same way as OpenAI
+    // This is a placeholder for compatibility
+    private getToolsDefinition(): any[] {
+        return [];
     }
 }

@@ -4,23 +4,35 @@ import path from "path";
 import EmbeddingRetriever from "./EmbeddingRetriever";
 import fs from "fs";
 import { logTitle } from "./utils";
+import 'dotenv/config';
 
-const URL = 'https://news.ycombinator.com/'
 const outPath = path.join(process.cwd(), 'output');
 const TASK = `
-告诉我Antonette的信息,先从我给你的context中找到相关信息,总结后创作一个关于她的故事
-把故事和她的基本信息保存到${outPath}/antonette.md,输出一个漂亮md文件
+Verifique as issues do repositório do GitHub https://github.com/igorrhamon/the_old_reader/ e responda a seguinte pergunta:
+Como resolver a issue #1?
+Crie um arquivo de texto com o passo a passo para resolver a issue.
+Obtenhao contexto 
+O arquivo deve ser salvo no diretório output com o nome "resolucao_issue_1.txt".
 `
 
 const fetchMCP = new MCPClient("mcp-server-fetch", "uvx", ['mcp-server-fetch']);
 const fileMCP = new MCPClient("mcp-server-file", "npx", ['-y', '@modelcontextprotocol/server-filesystem', outPath]);
+const githubMCP = new MCPClient(
+    "github2",
+    "npx",
+    [
+        "-y",
+        "@modelcontextprotocol/server-github",
+        `--GITHUB_PERSONAL_ACCESS_TOKEN=${process.env.GITHUB_PERSONAL_ACCESS_TOKEN}`
+    ]
+);
 
 async function main() {
     // RAG
     const context = await retrieveContext();
 
     // Agent
-    const agent = new Agent('openai/gpt-4o-mini', [fetchMCP, fileMCP], '', context);
+    const agent = new Agent('gemini-2.0-flash', [fetchMCP, fileMCP, githubMCP], '', context);
     await agent.init();
     await agent.invoke(TASK);
     await agent.close();
@@ -30,7 +42,7 @@ main()
 
 async function retrieveContext() {
     // RAG
-    const embeddingRetriever = new EmbeddingRetriever("BAAI/bge-m3");
+    const embeddingRetriever = new EmbeddingRetriever("sentence-transformers/all-MiniLM-L6-v2");
     const knowledgeDir = path.join(process.cwd(), 'knowledge');
     const files = fs.readdirSync(knowledgeDir);
     for await (const file of files) {

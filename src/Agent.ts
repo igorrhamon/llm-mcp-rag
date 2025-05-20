@@ -1,10 +1,10 @@
 import MCPClient from "./MCPClient";
-import ChatOpenAI from "./ChatOpenAI";
+import ChatAssistant from "./ChatOpenAI";
 import { logTitle } from "./utils";
 
 export default class Agent {
     private mcpClients: MCPClient[];
-    private llm: ChatOpenAI | null = null;
+    private llm: ChatAssistant | null = null;
     private model: string;
     private systemPrompt: string;
     private context: string;
@@ -22,7 +22,7 @@ export default class Agent {
             await client.init();
         }
         const tools = this.mcpClients.flatMap(client => client.getTools());
-        this.llm = new ChatOpenAI(this.model, this.systemPrompt, tools, this.context);
+        this.llm = new ChatAssistant(this.model, this.systemPrompt, tools, this.context);
     }
 
     async close() {
